@@ -43,7 +43,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '0.5.0',
+    [string]$Version = '0.6.0',
 
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
@@ -237,7 +237,7 @@ $translationInfo = if (Test-Path -LiteralPath $modelTarget) {
 $readme = @"
 ShotTool v$Version — 独立 Windows 截图工具
 
-双击 ShotTool.exe 后托盘常驻。Alt+A 截图，拖拽框选后点工具标注。
+双击 ShotTool.exe 后托盘常驻。Alt+A 截图，悬停可自动识别窗口，单击锁定；拖动进行自由框选。
 Enter / Ctrl+C 复制，Ctrl+S 保存，Esc / 右键取消。
 框选后点图钉或按 F3 固定截图。贴图可拖动、滚轮缩放，双击恢复大小，Esc 关闭。
 Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+1..6 切工具，Tab 切换颜色与线宽/字号。
@@ -252,8 +252,8 @@ Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+1..6 切工具，Tab 切换颜色与线宽/
 未携带腾讯组件。models 目录若存在，应与程序一同保留。
 第三方组件和模型声明见 licenses 目录。
 
-已验证构建与轻量整合自检；实际 UI 自动化画面读取超时，尚未完成真人体验验收。
-限制：窗口吸附、长截图、贴图、自动打码尚未实现，多屏/HDR/受保护画面待验证。
+窗口自动识别以 Windows 顶层窗口边界为准，不能单独选择窗口内部控件。
+限制：长截图、自动打码尚未实现，多屏/HDR/受保护画面待验证。
 本版未签名。
 "@
 

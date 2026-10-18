@@ -24,6 +24,7 @@ src/ShotTool/Assets/Models/
 /docs/screenshots/*
 !/docs/screenshots/settings.png
 !/docs/screenshots/settings-ai.png
+!/docs/screenshots/app-icon.png
 /scripts/*
 !/scripts/build.ps1
 !/scripts/publish.ps1

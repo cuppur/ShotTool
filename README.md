@@ -2,18 +2,21 @@
 
 Windows 上的独立截图工具，参考微信截图的常用交互。**无需启动微信，也无需登录账号。**
 
-支持框选、标注、复制、保存、固定截图、全局快捷键和托盘常驻。提供系统 OCR、可选 Paddle OCR，以及可选本地离线翻译。
+支持窗口自动识别与框选、标注、复制、保存、固定截图、全局快捷键和托盘常驻。提供系统 OCR、可选 Paddle OCR，以及可选本地离线翻译。
 
 ## 使用
 
 从 [Releases](https://github.com/cuppur/ShotTool/releases) 获取 Windows x64 程序，双击后按 **Alt+A** 截图。
 
 - 拖拽框选，选择矩形、椭圆、箭头、画笔、马赛克、文字或序号工具。
+- 鼠标悬停窗口时预览窗口边界，单击锁定；按住并拖动仍可手动框选。
 - **Enter / Ctrl+C** 复制，**Ctrl+S** 保存，**Esc / 右键** 取消。
 - 点击图钉或在截图窗口按 **F3** 固定截图。贴图支持拖动、滚轮缩放、双击恢复、复制、另存为和关闭。
 - 托盘右键 → 设置，可修改热键、保存位置、识别与翻译方式、开机启动。
 
 Windows 10 2004+ / Windows 11，x64。标准发布为自包含程序，无需安装 .NET。程序未签名。
+
+![ShotTool 应用图标](docs/screenshots/app-icon.png)
 
 ## 设置界面
 
@@ -37,10 +40,10 @@ Windows 10 2004+ / Windows 11，x64。标准发布为自包含程序，无需安
 
 ```powershell
 ./scripts/fetch-ocr-models.ps1
-./scripts/publish.ps1 -Version 0.5.0
+./scripts/publish.ps1 -Version 0.6.0
 ```
 
-OCR 下载脚本会校验固定 SHA-256。发布目录为 `dist/ShotTool-0.5.0-win-x64/`。构建过程需要还原 NuGet 依赖。
+OCR 下载脚本会校验固定 SHA-256。发布目录为 `dist/ShotTool-0.6.0-win-x64/`。构建过程需要还原 NuGet 依赖。
 
 翻译默认关闭，需自行准备模型或本机 Ollama 服务。标准发布包不含约 1.1 GB 的 NLLB 权重；启用方法和所需文件见 [使用说明](docs/usage.md)。
 

@@ -64,58 +64,48 @@ public static class TrayIconFactory
         graphics.Clear(Color.Transparent);
 
         float s = size;
-        // 括号长度 / 线宽按比例，16px 下也是 3px 线宽，肉眼可辨
-        float stroke = Math.Max(1.5f, s * 0.11f);
-        float inset = s * 0.13f;
-        float armRatio = 0.42f;
+        float inset = Math.Max(0.5f, s * 0.035f);
+        var tile = new RectangleF(inset, inset, s - inset * 2, s - inset * 2);
+        float radius = s * 0.22f;
+        using GraphicsPath tilePath = RoundedRectangle(tile, radius);
+        using (var shadow = new SolidBrush(Color.FromArgb(90, 0, 0, 0)))
+            graphics.FillPath(shadow, tilePath);
 
-        float left = inset;
-        float top = inset;
-        float right = s - inset;
-        float bottom = s - inset;
-        float armX = (right - left) * armRatio;
-        float armY = (bottom - top) * armRatio;
+        RectangleF face = RectangleF.Inflate(tile, -s * 0.025f, -s * 0.025f);
+        using GraphicsPath facePath = RoundedRectangle(face, radius * 0.88f);
+        using (var background = new LinearGradientBrush(face, Color.FromArgb(0x13, 0xA9, 0x9B), Color.FromArgb(0x13, 0x4B, 0x65), 45f))
+            graphics.FillPath(background, facePath);
 
-        using var penOutline = new Pen(Outline, stroke + Math.Max(0.6f, s * 0.05f))
-        {
-            StartCap = LineCap.Round,
-            EndCap = LineCap.Round,
-        };
-        using var penAccent = new Pen(Accent, stroke)
-        {
-            StartCap = LineCap.Round,
-            EndCap = LineCap.Round,
-        };
+        // White capture frame: reads as both crop corners and a tiny screenshot card.
+        float stroke = Math.Max(1.35f, s * 0.085f);
+        float left = s * 0.23f, top = s * 0.23f, right = s * 0.77f, bottom = s * 0.77f;
+        float arm = (right - left) * 0.32f;
+        using var frame = new Pen(Color.FromArgb(245, 255, 255, 255), stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        graphics.DrawLine(frame, left, top + arm, left, top); graphics.DrawLine(frame, left, top, left + arm, top);
+        graphics.DrawLine(frame, right - arm, top, right, top); graphics.DrawLine(frame, right, top, right, top + arm);
+        graphics.DrawLine(frame, left, bottom - arm, left, bottom); graphics.DrawLine(frame, left, bottom, left + arm, bottom);
+        graphics.DrawLine(frame, right - arm, bottom, right, bottom); graphics.DrawLine(frame, right, bottom - arm, right, bottom);
 
-        // 先画深色底再画绿色，形成浅色任务栏上的描边
-        foreach (Pen pen in new[] { penOutline, penAccent })
-        {
-            // 四角括号（NW / NE / SW / SE 各两段）
-            graphics.DrawLine(pen, left, top, left + armX, top);
-            graphics.DrawLine(pen, left, top, left, top + armY);
+        // Camera aperture / cursor target, with a bright mint center.
+        float lens = s * 0.19f;
+        var lensRect = new RectangleF((s - lens) / 2f, (s - lens) / 2f, lens, lens);
+        using (var lensFill = new SolidBrush(Color.FromArgb(220, 9, 37, 47))) graphics.FillEllipse(lensFill, lensRect);
+        using (var lensRing = new Pen(Color.FromArgb(245, 255, 255, 255), Math.Max(1f, s * 0.055f))) graphics.DrawEllipse(lensRing, lensRect);
+        float core = s * 0.055f;
+        using var coreFill = new SolidBrush(Color.FromArgb(0x8B, 0xF5, 0xD4));
+        graphics.FillEllipse(coreFill, (s - core) / 2f, (s - core) / 2f, core, core);
+    }
 
-            graphics.DrawLine(pen, right - armX, top, right, top);
-            graphics.DrawLine(pen, right, top, right, top + armY);
-
-            graphics.DrawLine(pen, left, bottom - armY, left, bottom);
-            graphics.DrawLine(pen, left, bottom, left + armX, bottom);
-
-            graphics.DrawLine(pen, right - armX, bottom, right, bottom);
-            graphics.DrawLine(pen, right, bottom - armY, right, bottom);
-        }
-
-        // 中心十字（截图准星）
-        float centerX = s / 2f;
-        float centerY = s / 2f;
-        float crossArm = s * 0.16f;
-        using var penCrossOutline = new Pen(Outline, Math.Max(1.4f, s * 0.10f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        using var penCross = new Pen(Color.White, Math.Max(1f, s * 0.07f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-
-        foreach (Pen pen in new[] { penCrossOutline, penCross })
-        {
-            graphics.DrawLine(pen, centerX - crossArm, centerY, centerX + crossArm, centerY);
-            graphics.DrawLine(pen, centerX, centerY - crossArm, centerX, centerY + crossArm);
-        }
+    private static GraphicsPath RoundedRectangle(RectangleF rectangle, float radius)
+    {
+        var path = new GraphicsPath();
+        float diameter = radius * 2;
+        path.AddArc(rectangle.X, rectangle.Y, diameter, diameter, 180, 90);
+        path.AddArc(rectangle.Right - diameter, rectangle.Y, diameter, diameter, 270, 90);
+        path.AddArc(rectangle.Right - diameter, rectangle.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(rectangle.X, rectangle.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     /// <summary>

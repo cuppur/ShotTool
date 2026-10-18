@@ -83,6 +83,10 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
     private PhysRect _lastFootprint;
     private OverlayOutcome? _outcome;
     private bool _closing;
+    private bool _windowCandidate;
+    private bool _pendingWindowPick;
+    private PhysRect _pendingWindowBounds;
+    private PhysPoint _windowPickStart;
 
     public SelectionOverlayForm(ShotToolContext context, CapturedFrame frame, ShotCompletion? forcedMode = null)
     {
@@ -168,6 +172,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         NativeMethods.SetForegroundWindow(Handle);
         Activate();
         NativeMethods.SetFocus(Handle);
+        UpdateWindowCandidateAtCursor();
 
         _ctx.Log.Info(
             $"overlay 已显示：{_virtualBounds.Width}x{_virtualBounds.Height} @({_virtualBounds.X},{_virtualBounds.Y})，" +
@@ -343,7 +348,10 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         {
             PhysRect localRect = ToLocalPhysRect(selection.Value);
             SelectionPainter.PaintBorder(graphics, localRect, _metrics);
-            SelectionPainter.PaintHandles(graphics, localRect, _metrics);
+            if (!_windowCandidate)
+            {
+                SelectionPainter.PaintHandles(graphics, localRect, _metrics);
+            }
 
             // ---- ④⑤ 标注层：**必须在 HUD / 放大镜 / 工具条之前**（ADR §9.2 固定序），
             //      否则标注会盖住尺寸提示与工具条 ----
@@ -447,6 +455,25 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
             return;
         }
 
+        if (_pendingWindowPick)
+        {
+            if (_windowPickStart.DistanceSquaredTo(_cursorVirtual) < 16)
+            {
+                InvalidateOverlay(_lastFootprint);
+                return;
+            }
+
+            // Press+drag always remains a freeform selection, even when it starts on a window.
+            _pendingWindowPick = false;
+            _windowCandidate = false;
+            _history.Clear();
+            _selection = null;
+            _toolbar.Layout(null, _virtualBounds, _dpi);
+            _drag = DragMode.Creating;
+            _dragOriginVirtual = _windowPickStart;
+            _selection = PhysRect.FromPoints(_dragOriginVirtual, _cursorVirtual).Clamp(_virtualBounds);
+        }
+
         switch (_drag)
         {
             case DragMode.Creating:
@@ -486,6 +513,8 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
             default:
             {
+                if (_selection is null || _windowCandidate) UpdateWindowCandidateAtCursor();
+
                 // 悬停：更新工具条 hover + 光标形状（工具条命中优先）
                 PhysPoint local = ToLocalPoint(_cursorVirtual);
                 _toolbar.OnMouseMove(local);
@@ -498,6 +527,24 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
         UpdateCursorShape();
         InvalidateOverlay(_lastFootprint);
+    }
+
+    private void UpdateWindowCandidateAtCursor()
+    {
+        if (_selection is not null && !_windowCandidate) return;
+
+        PhysRect? candidate = WindowTargetPicker.FindAt(_cursorVirtual, Handle, _virtualBounds);
+        if (candidate is { } bounds)
+        {
+            _selection = bounds;
+            _windowCandidate = true;
+            _toolbar.Layout(null, _virtualBounds, _dpi);
+        }
+        else if (_windowCandidate)
+        {
+            _selection = null;
+            _windowCandidate = false;
+        }
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -520,6 +567,16 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         PhysPoint local = ToLocalPoint(_cursorVirtual);
 
         if (_phase == ShotPhase.Committing) return;
+
+        if (_windowCandidate && _selection is { } candidateBounds)
+        {
+            // A click locks the window preview; dragging from the same point starts freeform crop.
+            _pendingWindowPick = true;
+            _pendingWindowBounds = candidateBounds;
+            _windowPickStart = _cursorVirtual;
+            Capture = true;
+            return;
+        }
 
         // ① 工具条命中优先（工具条在选区外，必须先判）
         if (_toolbar.IsVisible && _toolbar.ContainsPoint(local))
@@ -574,6 +631,21 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
         Capture = false;
         _toolbar.OnMouseUp();
+
+        if (_pendingWindowPick)
+        {
+            _pendingWindowPick = false;
+            _windowCandidate = false;
+            _selection = _pendingWindowBounds;
+            _drag = DragMode.None;
+            SetPhase(ShotPhase.Annotating);
+            _toolbar.Layout(_selection, _virtualBounds, _dpi);
+            ResetAnnotationComposite();
+            UpdateCursorShape();
+            InvalidateOverlay(_lastFootprint);
+            _ctx.Log.Info($"窗口边界已选中：{_selection.Value}（{_selection.Value.Width}x{_selection.Value.Height}）。");
+            return;
+        }
 
         if (_drawing)
         {
