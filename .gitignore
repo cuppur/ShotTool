@@ -1,0 +1,51 @@
+# Build output and local deliveries
+**/bin/
+**/obj/
+dist/
+publish/
+artifacts/
+*.pdb
+
+# Model weights remain outside Git
+Assets/Models/**
+!Assets/Models/README.md
+src/ShotTool/Models/
+src/ShotTool/Assets/Models/
+*.onnx
+*.onnx.data
+*.ort
+*.xnet
+
+# Local investigation and desktop captures are not public
+/docs/*
+!/docs/usage.md
+!/docs/architecture.md
+!/docs/screenshots/
+/docs/screenshots/*
+!/docs/screenshots/settings.png
+!/docs/screenshots/settings-ai.png
+/scripts/*
+!/scripts/build.ps1
+!/scripts/publish.ps1
+!/scripts/fetch-ocr-models.ps1
+.agent-teams/
+
+# Machine state, credentials and editor files
+.env
+.env.*
+settings.json
+settings.json.*
+*.log
+*.tmp
+*.tmp-*
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+__pycache__/
+*.pyc
+Thumbs.db
+Desktop.ini
+.DS_Store

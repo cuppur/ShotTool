@@ -1,0 +1,33 @@
+ShotTool — third-party components
+
+No Tencent / Weixin binaries, icons, or models are included.
+The custom application code has not been assigned a public open-source license.
+Third-party components retain their own licenses, included in this directory.
+
+.NET 8.0.29 / Windows Desktop Runtime: Microsoft and contributors, MIT.
+Source: https://github.com/dotnet/runtime and https://github.com/dotnet/winforms
+License and upstream third-party notices copied from the restored runtime NuGet package.
+
+Microsoft.ML.OnnxRuntime 1.31.0: Microsoft and contributors, MIT.
+License and ThirdPartyNotices copied from the exact restored NuGet package.
+https://github.com/microsoft/onnxruntime
+
+Tokenizers.DotNet / Tokenizers.DotNet.runtime.win-x64 1.4.1:
+NuGet declares MIT; upstream license included.
+https://github.com/sappho192/Tokenizers.DotNet
+Native tokenization uses Hugging Face tokenizers (Apache-2.0); upstream license included.
+https://github.com/huggingface/tokenizers
+
+Embedded PP-OCRv4 detection/recognition ONNX models and character dictionary:
+PaddleOCR contributors; Apache-2.0. ONNX files are converted representations
+of Paddle models, not Tencent assets. Files renamed det.onnx / rec.onnx / keys.txt.
+Acquisition URLs and SHA-256: scripts/fetch-ocr-models.ps1.
+Model mirror: https://huggingface.co/SWHL/RapidOCR
+Original project: https://github.com/PaddlePaddle/PaddleOCR
+RapidOCR project: https://github.com/RapidAI/RapidOCR
+Upstream Apache-2.0 license texts included.
+
+Default release does not contain NLLB translation weights.
+If manually distributing a translation model, include its exact upstream model
+card, attribution and license separately. NLLB-200-distilled-600M is published
+under CC-BY-NC-4.0 and is not covered by the code licenses above.

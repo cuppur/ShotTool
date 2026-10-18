@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "grid": 24,
+  "strokeWidth": 1.6,
+  "note": "本项目自绘图标清单（全部手工绘制，无任何第三方素材）。SVG 仅作为几何真相源：运行时不解析 SVG，而是用同一份 path data 由代码绘制（WPF DrawingContext / GDI GraphicsPath），因此不引入任何第三方渲染依赖。",
+  "icons": [
+    { "key": "rect",       "file": "tool-rect.svg",     "label": "矩形",     "group": "tool" },
+    { "key": "ellipse",    "file": "tool-ellipse.svg",  "label": "椭圆",     "group": "tool" },
+    { "key": "arrow",      "file": "tool-arrow.svg",    "label": "箭头",     "group": "tool" },
+    { "key": "pen",        "file": "tool-pen.svg",      "label": "画笔",     "group": "tool" },
+    { "key": "mosaic",     "file": "tool-mosaic.svg",   "label": "马赛克",   "group": "tool" },
+    { "key": "text",       "file": "tool-text.svg",     "label": "文字",     "group": "tool" },
+    { "key": "number",     "file": "tool-number.svg",   "label": "序号",     "group": "tool" },
+    { "key": "undo",       "file": "tool-undo.svg",     "label": "撤销",     "group": "action" },
+    { "key": "ocr",        "file": "tool-ocr.svg",      "label": "提取文字", "group": "action" },
+    { "key": "translate",  "file": "tool-translate.svg","label": "翻译",     "group": "action" },
+    { "key": "save",       "file": "tool-save.svg",     "label": "保存",     "group": "action" },
+    { "key": "copy",       "file": "tool-copy.svg",     "label": "复制",     "group": "action" },
+    { "key": "close",      "file": "tool-close.svg",    "label": "取消",     "group": "action" },
+    { "key": "pin",        "file": "tool-pin.svg",      "label": "贴图",     "group": "p1-reserved" },
+    { "key": "brush-s",    "file": "brush-s.svg",       "label": "笔触细",   "group": "brush" },
+    { "key": "brush-m",    "file": "brush-m.svg",       "label": "笔触中",   "group": "brush" },
+    { "key": "brush-l",    "file": "brush-l.svg",       "label": "笔触粗",   "group": "brush" },
+    { "key": "brush-fill", "file": "brush-fill.svg",    "label": "填充",     "group": "brush" },
+    { "key": "textsize-s", "file": "textsize-s.svg",    "label": "字号小",   "group": "textsize" },
+    { "key": "textsize-m", "file": "textsize-m.svg",    "label": "字号中",   "group": "textsize" },
+    { "key": "textsize-l", "file": "textsize-l.svg",    "label": "字号大",   "group": "textsize" }
+  ]
+}

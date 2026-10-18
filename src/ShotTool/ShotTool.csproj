@@ -1,0 +1,206 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ShotTool —— Windows 独立截图工具（微信 4.x 截图交互复刻，纯自研实现）
+    架构决策见 docs/02-architecture.md（ADR-001..ADR-006）
+
+    目标框架：net8.0-windows（WinForms + System.Drawing + Win32 P/Invoke）
+    平台：x64 only —— 本项目使用 IntPtr/unsafe 指针与 GDI 句柄，
+          且目标机为 x64（见 docs/01-recon.md §8）；Arm64 不在范围内。
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!--
+      TFM 必须带 Windows 平台版本号，否则**无法解析 WinRT 投影**：
+      Windows.Media.Ocr / Windows.Graphics.Imaging / Windows.Storage.Streams 全部编译不过
+      （dev-ai 用独立探针实测，见 docs/evidence/ocr-probe.md）。
+      TargetPlatformMinVersion 取 Win10 1809 = Windows.Media.Ocr 可用下限；
+      net8.0 本身已要求 Win10 1607+，因此不抬高用户门槛。
+      Microsoft.Windows.SDK.NET.Ref 是编译期引用，不进输出、不增加发布体积。
+    -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- GDI/DXGI 互操作与位图指针操作需要 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- x64 only（见上） -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+
+    <!-- DPI：PerMonitorV2 双保险。manifest 保证进程一启动就是 PMv2；
+         Program.Main 第一行再调 SetProcessDpiAwarenessContext 兜底（幂等，失败无害）。
+         WinForms 的 ApplicationHighDpiMode 只影响 ApplicationConfiguration.Initialize()，
+         我们不使用该入口，但仍然显式声明，避免有人误加默认调用。 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <AssemblyName>ShotTool</AssemblyName>
+    <RootNamespace>ShotTool</RootNamespace>
+    <Product>ShotTool</Product>
+    <AssemblyTitle>ShotTool 独立截图工具</AssemblyTitle>
+    <Description>独立截图工具：框选 / 标注 / 复制保存 / 全局热键 / 托盘常驻 / OCR</Description>
+    <Company>wechat-shot-standalone</Company>
+    <Version>0.5.0</Version>
+    <FileVersion>0.5.0.0</FileVersion>
+    <Copyright>本仓库自研代码。不复用、不携带、不分发任何腾讯二进制文件或资源。</Copyright>
+    <NeutralLanguage>zh-Hans</NeutralLanguage>
+
+    <!-- 单文件发布时不压缩：EnableCompressionInSingleFile 会把冷启动从 ~120ms 拉到 ~400ms
+         （需先解压 managed 程序集到临时目录）。体积换启动速度，本项目选启动速度。
+         见 docs/02-architecture.md ADR-004。 -->
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!-- IDE 平台兼容性分析对 net8.0-windows + WinForms 项目无收益 -->
+    <!-- WFAC010: WinForms 建议把 DPI 设置从 manifest 移到 ApplicationHighDpiMode。
+         本项目**故意**保留 manifest 声明：进程创建即 PerMonitorV2，早于任何托管代码；
+         Program.Main 里再调 SetProcessDpiAwarenessContext 只是兜底。两条路径并存是有意设计
+         （见 app.manifest 顶部注释与 ADR-001），因此抑制该建议。 -->
+    <NoWarn>$(NoWarn);CA1416;WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <!-- 只在显式 publish -p:PublishSingleFile=true 时生效的附加设置 -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <!-- 双击即用：默认自带运行时（目标机不需要预装 .NET）；-p:SelfContained=false 可改框架依赖。 -->
+    <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
+    <!-- WinForms 需要的 native 库（coreclr/hostfxr 等）打进单文件 -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- 不生成 pdb 到发布目录，减小体积 -->
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      分层文件作用域（详见 docs/02-architecture.md §6）:
+        App/       + Program.cs : dev-capture   （引导、托盘、热键、单实例）
+        Capture/   + Interop/   : dev-capture   （ICaptureSource 实现、Win32 声明）
+        Core/                   : architect     （共享契约，只有 architect 改）
+        Editor/    + Assets/    : dev-editor    （overlay、绘制、命中测试、工具条 UI）
+        Output/    + Settings/  : dev-integration（剪贴板/保存、配置、脚本、README）
+        Ai/        + Models/    : dev-ai        （OCR/翻译实现、模型文件）
+
+      下面用显式 Include 说明目录归属，DefaultCompileItems 仍会兜底收所有 .cs，
+      因此新增文件只要落在上述目录内即自动编译，无需改本文件。
+    -->
+
+    <!--
+      ★ 图标不进 dist（真单文件）：工具条图标由 Editor/Toolbar/ToolbarIcons.cs
+        用硬编码 path data 逐图元绘制，运行时不读任何文件（离屏渲染证据：
+        docs/evidence/editor/toolbar-render.png）。仓库根 Assets/icons/*.svg
+        只是「几何真相源」，供人核对与自绘参考 —— 既不复制也不嵌入。
+        （2026-10-17 实测：移走 dist 的 Assets/ 后程序启动、Alt+A 进入 overlay、
+        抓屏/显示/取消全部正常。）
+
+      ★ 模型权重永不进 exe / 不进单文件：随 dist 分发由 scripts/publish.ps1
+        复制到 dist\models\（exe 之外）；权重也绝不塞进单文件包（1.07 GiB 每次
+        启动解压是灾难级体验）。下面三条 Never 是兜底防线。
+    -->
+    <None Include="..\..\Assets\Models\**\*" Condition="Exists('..\..\Assets\Models')">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+    <None Include="Assets\Models\**\*" Condition="Exists('Assets\Models')">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+    <None Include="Models\**\*" Condition="Exists('Models')">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      ============================================================================
+      模型权重：**分目录两类规则**（captain 裁决；NLLB 与 PaddleOCR 落地方式不同，别混）
+      ============================================================================
+
+        模型        位置                        打包方式                     运行时读取
+        ~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~~~~~~  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        NLLB 翻译   Assets\Models\nllb*\        **Never**（不进 exe/输出）   文件系统（dist\models\ 或 %LOCALAPPDATA%）
+                    1.07 GiB                    由 publish.ps1 复制到 dist   绝不进单文件包（解压是灾难）
+        PaddleOCR   Assets\Models\paddle-ocr\   **EmbeddedResource（进 exe）** GetManifestResourceStream
+                    ~15 MB，Apache-2.0           真单文件，无解压开销         用下方固定资源名，不要猜
+
+      ★ 顺序很重要：`Assets\Models\**` 已在上面被整体收为 Never（NLLB 防线），
+        这里必须先 None Remove 再 EmbeddedResource，否则同一文件同时是 None 与 EmbeddedResource
+        —— 不报错但语义混乱，且以后有人把 paddle 挪进 dist 会被当成合法。
+
+      ★ 资源名约定（写死，dev-ai 与 reviewer 都按这个查）：
+            ShotTool.Assets.Models.PaddleOcr.det.onnx
+            ShotTool.Assets.Models.PaddleOcr.rec.onnx
+            ShotTool.Assets.Models.PaddleOcr.cls.onnx     （如需要）
+            ShotTool.Assets.Models.PaddleOcr.keys.txt
+        约定：paddle-ocr 目录下文件必须**扁平放置、文件名唯一**；子目录会被扁平化（%(Filename)），
+              同名文件会导致资源名冲突（构建不报错但只有一个生效）—— 所以禁止同名。
+              dev-ai 取资源时请按名字精确匹配，或用 GetManifestResourceNames() 做 Contains("PaddleOcr") 过滤。
+    -->
+    <!-- NLLB 大模型：显式重申「永不进 exe / 永不随输出」（用 Update 不新增重复项）。
+         整体 `Assets\Models\**` 已是 Never，这条是给 reviewer 一眼可见的语义声明，
+         也防止将来有人收紧整体规则时把 nllb 漏掉。-->
+    <None Update="Assets\Models\nllb*\**\*" CopyToOutputDirectory="Never" ExcludeFromSingleFile="true" />
+    <None Update="..\..\Assets\Models\nllb*\**\*" CopyToOutputDirectory="Never" ExcludeFromSingleFile="true" />
+
+    <None Remove="Assets\Models\paddle-ocr\**\*" />
+    <None Remove="..\..\Assets\Models\paddle-ocr\**\*" />
+
+    <!-- 项目内（src/ShotTool/Assets/Models/paddle-ocr/） -->
+    <EmbeddedResource Include="Assets\Models\paddle-ocr\**\*"
+                     Condition="Exists('Assets\Models\paddle-ocr')">
+      <LogicalName>ShotTool.Assets.Models.PaddleOcr.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+
+    <!-- 仓库根（Assets/Models/paddle-ocr/）—— dev-editor 的图标也在根 Assets，dev-ai 很可能同样放根 -->
+    <EmbeddedResource Include="..\..\Assets\Models\paddle-ocr\**\*"
+                     Condition="Exists('..\..\Assets\Models\paddle-ocr')">
+      <LogicalName>ShotTool.Assets.Models.PaddleOcr.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!--
+    NuGet 依赖（3 个，全部服务 dev-ai 的可选 ONNX 通路；P0 主路径不依赖它们）
+
+      Microsoft.ML.OnnxRuntime 1.31.0     PaddleOCR(可选) + NLLB 翻译(可选) 的推理运行时
+      Tokenizers.DotNet 1.4.1             NLLB 分词器的托管封装
+      Tokenizers.DotNet.runtime.win-x64   上面那个包的 native 依赖（hf_tokenizers.dll）
+                                          ★ 只装托管包会在运行期 DllNotFoundException，
+                                            native 在独立 runtime 包里，必须成对引用。
+
+    「分发边界」不变：本 csproj 不引入任何模型权重（权重由用户放到
+    %LOCALAPPDATA%\ShotTool\models\...，上面 ItemGroup 已用 CopyToOutputDirectory=Never 兜住）。
+    若要彻底关闭 ONNX 通路（体积敏感的极简发布），删这三行并把 Ai 下标注 [P2] 的实现排除即可。
+  -->
+  <ItemGroup>
+    <!--
+      洁净度：Microsoft.ML.OnnxRuntime 会把 win-x64 的**导入库**（onnxruntime.lib /
+      onnxruntime_providers_shared.lib，链接期才用、运行期完全不用）复制到输出目录，
+      单文件发布时它们会作为散落文件留在 dist 里（实测 publish 后多出 2 个 .lib）。
+      这里去掉，保证「dist 只有 exe」（dev-integration 的 publish.ps1 有洁癖校验）。
+    -->
+    <None Remove="**\*.lib" />
+    <Content Remove="**\*.lib" />
+  </ItemGroup>
+
+  <!--
+    上面的 None/Content Remove 不足以去掉它们：ONNX Runtime 的 .lib 是通过
+    ReferenceCopyLocalPaths → ResolvedFileToPublish 进入发布清单的（不是 None/Content）。
+    因此在 ComputeResolvedFilesToPublishList 之后从发布清单里剔除 .lib。
+  -->
+  <Target Name="ShotToolRemoveImportLibsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+    <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
+    <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
+  </ItemGroup>
+
+</Project>

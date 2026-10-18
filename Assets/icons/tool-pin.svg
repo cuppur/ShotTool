@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 本项目自绘图标：贴图钉在桌面（P1 预留） -->
+  <path d="M12 3.8 a5.4 5.4 0 0 1 5.4 5.4 c0 4 -5.4 11 -5.4 11 s-5.4 -7 -5.4 -11 A5.4 5.4 0 0 1 12 3.8 Z"/>
+  <circle cx="12" cy="9.2" r="1.8"/>
+</svg>

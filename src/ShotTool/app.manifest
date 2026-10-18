@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ShotTool 应用清单 —— DPI 正确性的第一道保障
+
+  本机实测 DPI 225%（逻辑 1707x960 / 物理 3840x2160，见 docs/01-recon.md §8）。
+  若进程以 System-Aware 或 Unaware 启动：
+    * GetDC(NULL) + BitBlt 抓到的是被 DWM 缩放过的像素，尺寸 = 逻辑尺寸；
+    * 鼠标消息坐标是逻辑坐标；
+    * 二者相乘/相除会引入 2.25 倍偏差 → 框选区域整体错位。
+  因此在清单里硬声明 PerMonitorV2，进程创建即为 PMv2，不需要等托管代码运行。
+
+  dpiAware 与 dpiAwareness 两条都写：
+    * dpiAwareness（2016 schema）覆盖 Win10 1703+，取值为 PerMonitorV2；
+    * dpiAware（2005 schema）是旧系统（Win8.1/Win10 早期）的回退取值 "true/pm" = PerMonitor。
+  两者共存时新系统读 dpiAwareness，旧系统忽略它读 dpiAware。
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="ShotTool.app" type="win32" />
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <!-- 截图工具不需要管理员权限；asInvoker 保证可从普通用户会话启动，
+             且能正常读取其它同权限进程的窗口（UIPI 不阻断同完整性级别）。 -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 / 11。声明后 GetVersionEx 等不再返回兼容性伪装值，
+           也让 PerMonitorV2 在 Win10 上按预期生效。 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <!-- 长路径：用户可能把截图保存到很深的目录 -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>
