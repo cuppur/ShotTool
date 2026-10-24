@@ -44,7 +44,7 @@ Windows 10 2004+ / Windows 11，x64。标准发布为自包含程序，无需安
 ./scripts/publish.ps1 -Version 0.7.0
 ```
 
-OCR 下载脚本会校验固定 SHA-256。发布目录为 `dist/ShotTool-0.6.0-win-x64/`。构建过程需要还原 NuGet 依赖。
+OCR 下载脚本会校验固定 SHA-256。发布目录为 `dist/ShotTool-0.7.0-win-x64/`。构建过程需要还原 NuGet 依赖。
 
 翻译默认关闭，需自行准备模型或本机 Ollama 服务。标准发布包不含约 1.1 GB 的 NLLB 权重；启用方法和所需文件见 [使用说明](docs/usage.md)。
 
