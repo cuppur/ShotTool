@@ -72,11 +72,14 @@ internal sealed partial class SelectionOverlayForm
     /// <inheritdoc />
     public void SetSelection(PhysRect? selection)
     {
+        bool wasCandidate = _windowCandidate;
+        _windowCandidate = false;
+        _pendingWindowPick = false;
         PhysRect? clamped = selection is null
             ? null
             : selection.Value.Clamp(_virtualBounds) is { IsEmpty: false } hit ? hit : null;
 
-        if (Nullable.Equals(clamped, _selection))
+        if (Nullable.Equals(clamped, _selection) && !wasCandidate)
         {
             return;
         }

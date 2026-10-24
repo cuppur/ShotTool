@@ -1,13 +1,12 @@
 // ============================================================================
 //  App/TrayIconFactory.cs —— 托盘 / 窗口图标（纯代码绘制，无外部资源文件）
 //
-//  为什么自绘而不是放一个 .ico 到仓库：
-//    * 交付边界要求自研，图标由代码生成 → 无需二进制资源、无需 svg→ico 转换步骤；
+//  自研几何绘制，--export-icon 从同一绘制源生成 exe 使用的多分辨率 ICO。
 //    * 支持任意 DPI：按目标尺寸重绘，225% 下 16px 图标不会糊成一团；
 //    * 生成方式是 PNG-in-ICO（Vista+ 支持），Icon 对象持有 MemoryStream，
 //      Dispose 即释放 —— 不产生 HICON 句柄泄漏（不需要 DestroyIcon 配对）。
 //
-//  图形语义：绿色四角框选括号 + 中心十字，一眼可辨"截图工具"。
+//  图形语义：蓝紫底、白色框选角标、薄荷绿裁切笔画。
 // ============================================================================
 
 using System.Drawing;
@@ -20,16 +19,18 @@ namespace ShotTool.App;
 /// <summary>托盘图标生成器。</summary>
 public static class TrayIconFactory
 {
-    /// <summary>品牌绿（与工具条选中态 #00C375 同源）。</summary>
-    private static readonly Color Accent = Color.FromArgb(0xFF, 0x00, 0xC3, 0x75);
-
-    /// <summary>深色描边，保证在浅色任务栏上也有边界。</summary>
-    private static readonly Color Outline = Color.FromArgb(0xCC, 0x1B, 0x1B, 0x1F);
-
-    /// <summary>生成多尺寸托盘图标（16/24/32/48 各一张，系统按需取用）。</summary>
+    internal static void Export(string iconPath, string previewPath)
+    {
+        var images = new[] { 16, 20, 24, 32, 48, 64, 128, 256 }
+            .Select(size => (size, RenderPng(size))).ToList();
+        File.WriteAllBytes(iconPath, BuildIco(images));
+        using var preview = CreateBitmap(256);
+        preview.Save(previewPath, ImageFormat.Png);
+    }
+    /// <summary>生成 16–256 像素多尺寸图标，系统按需取用。</summary>
     public static Icon Create()
     {
-        int[] sizes = { 16, 24, 32, 48 };
+        int[] sizes = { 16, 20, 24, 32, 48, 64, 128, 256 };
         var images = new List<(int Size, byte[] Png)>(sizes.Length);
         foreach (int size in sizes)
         {
@@ -62,40 +63,29 @@ public static class TrayIconFactory
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
-
-        float s = size;
-        float inset = Math.Max(0.5f, s * 0.035f);
-        var tile = new RectangleF(inset, inset, s - inset * 2, s - inset * 2);
-        float radius = s * 0.22f;
-        using GraphicsPath tilePath = RoundedRectangle(tile, radius);
-        using (var shadow = new SolidBrush(Color.FromArgb(90, 0, 0, 0)))
-            graphics.FillPath(shadow, tilePath);
-
-        RectangleF face = RectangleF.Inflate(tile, -s * 0.025f, -s * 0.025f);
-        using GraphicsPath facePath = RoundedRectangle(face, radius * 0.88f);
-        using (var background = new LinearGradientBrush(face, Color.FromArgb(0x13, 0xA9, 0x9B), Color.FromArgb(0x13, 0x4B, 0x65), 45f))
-            graphics.FillPath(background, facePath);
-
-        // White capture frame: reads as both crop corners and a tiny screenshot card.
-        float stroke = Math.Max(1.35f, s * 0.085f);
-        float left = s * 0.23f, top = s * 0.23f, right = s * 0.77f, bottom = s * 0.77f;
-        float arm = (right - left) * 0.32f;
-        using var frame = new Pen(Color.FromArgb(245, 255, 255, 255), stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        graphics.DrawLine(frame, left, top + arm, left, top); graphics.DrawLine(frame, left, top, left + arm, top);
-        graphics.DrawLine(frame, right - arm, top, right, top); graphics.DrawLine(frame, right, top, right, top + arm);
-        graphics.DrawLine(frame, left, bottom - arm, left, bottom); graphics.DrawLine(frame, left, bottom, left + arm, bottom);
-        graphics.DrawLine(frame, right - arm, bottom, right, bottom); graphics.DrawLine(frame, right, bottom - arm, right, bottom);
-
-        // Camera aperture / cursor target, with a bright mint center.
-        float lens = s * 0.19f;
-        var lensRect = new RectangleF((s - lens) / 2f, (s - lens) / 2f, lens, lens);
-        using (var lensFill = new SolidBrush(Color.FromArgb(220, 9, 37, 47))) graphics.FillEllipse(lensFill, lensRect);
-        using (var lensRing = new Pen(Color.FromArgb(245, 255, 255, 255), Math.Max(1f, s * 0.055f))) graphics.DrawEllipse(lensRing, lensRect);
-        float core = s * 0.055f;
-        using var coreFill = new SolidBrush(Color.FromArgb(0x8B, 0xF5, 0xD4));
-        graphics.FillEllipse(coreFill, (s - core) / 2f, (s - core) / 2f, core, core);
+        graphics.ScaleTransform(size / 128f, size / 128f);
+        var tile = new RectangleF(5, 5, 118, 118);
+        using var shape = RoundedRectangle(tile, 28);
+        using (var fill = new LinearGradientBrush(tile, Color.FromArgb(95, 104, 244), Color.FromArgb(49, 46, 133), 55f))
+            graphics.FillPath(fill, shape);
+        using (var rim = new Pen(Color.FromArgb(42, 255, 255, 255), 1.5f)) graphics.DrawPath(rim, shape);
+        // Optical simplification at small tray sizes keeps the four crop corners legible.
+        using var frame = new Pen(Color.FromArgb(250, 255, 255, 255), 8) {
+            StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        graphics.DrawLines(frame, new PointF[] { new(33, 51), new(33, 33), new(51, 33) });
+        graphics.DrawLines(frame, new PointF[] { new(77, 33), new(95, 33), new(95, 51) });
+        graphics.DrawLines(frame, new PointF[] { new(33, 77), new(33, 95), new(51, 95) });
+        if (size >= 32)
+        {
+            using var glass = new SolidBrush(Color.FromArgb(32, 255, 255, 255));
+            graphics.FillRectangle(glass, 46, 46, 36, 36);
+        }
+        using var mint = new Pen(Color.FromArgb(126, 246, 207), 9) {
+            StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        graphics.DrawLines(mint, new PointF[] { new(76, 95), new(95, 95), new(95, 76) });
+        graphics.DrawLine(mint, 76, 76, 95, 95);
+        graphics.ResetTransform();
     }
-
     private static GraphicsPath RoundedRectangle(RectangleF rectangle, float radius)
     {
         var path = new GraphicsPath();

@@ -293,6 +293,7 @@ internal sealed class TrayApplication : ApplicationContext
         try
         {
             using var form = new SettingsForm(settings, onApplied: OnSettingsApplied);
+            form.Icon = _icon;
             form.ShowDialog();
         }
         catch (Exception ex)

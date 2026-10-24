@@ -136,7 +136,8 @@ internal static class SelectionPainter
         PhysRect virtualBounds,
         OverlayMetrics metrics,
         Font font,
-        bool live)
+        bool live,
+        string? hint = null)
     {
         if (selection.IsEmpty)
         {
@@ -146,6 +147,7 @@ internal static class SelectionPainter
         string text = string.Create(
             CultureInfo.InvariantCulture,
             $"{selection.Width} x {selection.Height}");
+        if (hint is not null) text += "  ·  " + hint;
 
         Size textSize = TextRenderer.MeasureText(graphics, text, font, new Size(int.MaxValue, int.MaxValue), HudFlags);
         int padX = metrics.HudPaddingPx;

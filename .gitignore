@@ -20,6 +20,7 @@ src/ShotTool/Assets/Models/
 /docs/*
 !/docs/usage.md
 !/docs/architecture.md
+!/docs/window-selection.md
 !/docs/screenshots/
 /docs/screenshots/*
 !/docs/screenshots/settings.png

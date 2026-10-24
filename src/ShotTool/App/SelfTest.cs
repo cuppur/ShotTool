@@ -49,8 +49,10 @@ internal static class SelfTest
         bool aiUi = args.Contains("--selftest-ai-ui");
         bool pin = args.Contains("--selftest-pin");
         bool settingsUi = args.Contains("--selftest-settings");
+        bool windows = args.Contains("--selftest-windows");
+        bool icons = args.Contains("--export-icon");
 
-        if (!capture && !overlay && !compose && !editor && !aiUi && !pin && !settingsUi)
+        if (!capture && !overlay && !compose && !editor && !aiUi && !pin && !settingsUi && !windows && !icons)
         {
             return null;
         }
@@ -64,6 +66,8 @@ internal static class SelfTest
         bool ok = true;
         try
         {
+            if (icons) TrayIconFactory.Export(Path.Combine(outputDirectory, "ShotTool.ico"), Path.Combine(outputDirectory, "app-icon.png"));
+            if (windows) ok &= WindowPickingSelfTest.Run(log, outputDirectory);
             if (settingsUi) ok &= SettingsSelfTest.Run(log, outputDirectory);
             if (pin) ok &= PinSelfTest.Run(log, outputDirectory);
             if (aiUi) ok &= AiUiSelfTest.Run(log, outputDirectory);

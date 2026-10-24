@@ -87,12 +87,17 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
     private bool _pendingWindowPick;
     private PhysRect _pendingWindowBounds;
     private PhysPoint _windowPickStart;
+    private readonly WindowTargetPicker _windowTargets;
+    private IReadOnlyList<WindowTargetPicker.Target> _candidatePath = Array.Empty<WindowTargetPicker.Target>();
+    private int _candidateDepth;
 
-    public SelectionOverlayForm(ShotToolContext context, CapturedFrame frame, ShotCompletion? forcedMode = null)
+    public SelectionOverlayForm(ShotToolContext context, CapturedFrame frame, ShotCompletion? forcedMode = null,
+        WindowTargetPicker? windowTargets = null)
     {
         _ctx = context ?? throw new ArgumentNullException(nameof(context));
         _frame = frame ?? throw new ArgumentNullException(nameof(frame));
         _virtualBounds = frame.VirtualDesktopBounds;
+        _windowTargets = windowTargets ?? WindowTargetPicker.Snapshot(_virtualBounds);
         ForcedMode = forcedMode;
 
         _dpi = ResolveDpi(frame.CursorPosition);
@@ -290,6 +295,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
             _magnifier.Dispose();
             _dimmed.Dispose();
             _toolbarTip.Dispose();
+            _windowTargets.Dispose();
             _editorHost?.Dispose();
             _annotationComposite?.Dispose();
         }
@@ -365,7 +371,8 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
                 new PhysRect(0, 0, _virtualBounds.Width, _virtualBounds.Height),
                 _metrics,
                 hudFont,
-                live: _drag == DragMode.Creating);
+                live: _drag == DragMode.Creating,
+                hint: _windowCandidate ? (_candidateDepth == 0 ? "窗口 · 滚轮选层级 · Shift 自由框选" : "控件 · 滚轮选层级 · Shift 自由框选") : null);
         }
 
         // ---- ⑥ 放大镜 + 像素信息 ----
@@ -457,7 +464,8 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
         if (_pendingWindowPick)
         {
-            if (_windowPickStart.DistanceSquaredTo(_cursorVirtual) < 16)
+            int threshold = Math.Max(4, (int)Math.Round(4 * _dpi / 96.0));
+            if (_windowPickStart.DistanceSquaredTo(_cursorVirtual) < threshold * threshold)
             {
                 InvalidateOverlay(_lastFootprint);
                 return;
@@ -529,14 +537,20 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         InvalidateOverlay(_lastFootprint);
     }
 
-    private void UpdateWindowCandidateAtCursor()
+    private void UpdateWindowCandidateAtCursor(bool? disableSnap = null)
     {
         if (_selection is not null && !_windowCandidate) return;
 
-        PhysRect? candidate = WindowTargetPicker.FindAt(_cursorVirtual, Handle, _virtualBounds);
-        if (candidate is { } bounds)
+        var path = (disableSnap ?? ((ModifierKeys & Keys.Shift) != 0))
+            ? Array.Empty<WindowTargetPicker.Target>() : _windowTargets.FindAt(_cursorVirtual);
+        // Preserve a deliberately chosen level while staying in that same target.
+        if (_candidatePath.Count == 0 || path.Count == 0 || _candidateDepth >= path.Count
+            || _candidateDepth >= _candidatePath.Count || path[_candidateDepth].Handle != _candidatePath[_candidateDepth].Handle)
+            _candidateDepth = 0;
+        _candidatePath = path;
+        if (path.Count > 0)
         {
-            _selection = bounds;
+            _selection = path[_candidateDepth].Bounds;
             _windowCandidate = true;
             _toolbar.Layout(null, _virtualBounds, _dpi);
         }
@@ -567,6 +581,8 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         PhysPoint local = ToLocalPoint(_cursorVirtual);
 
         if (_phase == ShotPhase.Committing) return;
+
+        if (_selection is null || _windowCandidate) UpdateWindowCandidateAtCursor();
 
         if (_windowCandidate && _selection is { } candidateBounds)
         {
@@ -628,6 +644,21 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         {
             return;
         }
+
+        UpdateCursorPosition(e.Location);
+        if (_pendingWindowPick)
+        {
+            int threshold = Math.Max(4, (int)Math.Round(4 * _dpi / 96.0));
+            if (_windowPickStart.DistanceSquaredTo(_cursorVirtual) >= threshold * threshold)
+            {
+                _pendingWindowPick = false;
+                _windowCandidate = false;
+                _drag = DragMode.Creating;
+                _selection = PhysRect.FromPoints(_windowPickStart, _cursorVirtual).Intersect(_virtualBounds);
+            }
+        }
+        else if (_drag == DragMode.Creating)
+            _selection = PhysRect.FromPoints(_dragOriginVirtual, _cursorVirtual).Intersect(_virtualBounds);
 
         Capture = false;
         _toolbar.OnMouseUp();
@@ -707,6 +738,14 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
     {
         base.OnMouseWheel(e);
 
+        if (_windowCandidate && !_pendingWindowPick && _candidatePath.Count > 0)
+        {
+            _candidateDepth = Math.Clamp(_candidateDepth + (e.Delta < 0 ? 1 : -1), 0, _candidatePath.Count - 1);
+            _selection = _candidatePath[_candidateDepth].Bounds;
+            InvalidateOverlay(_lastFootprint);
+            return;
+        }
+
         // 滚轮切换放大镜倍率（4/8/12/16）
         _metrics = _metrics.WithNextZoom(e.Delta);
         _ctx.Log.Info($"放大镜倍率切换为 {_metrics.Zoom}x。");
@@ -750,11 +789,45 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
     // ------------------------------------------------------------------ 键盘
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.ShiftKey && _drag == DragMode.None && !_pendingWindowPick)
+        {
+            UpdateWindowCandidateAtCursor();
+            UpdateCursorShape();
+            InvalidateOverlay(_lastFootprint);
+        }
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (e.KeyCode == Keys.ShiftKey && _drag == DragMode.None && !_pendingWindowPick)
+        {
+            UpdateWindowCandidateAtCursor();
+            UpdateCursorShape();
+            InvalidateOverlay(_lastFootprint);
+        }
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         // 结果面板中的 Ctrl+C/A、Tab 等交给文本框处理，不能触发截图复制/全屏框选。
         if (_editorHost?.CurrentPanel is { ContainsFocus: true } && keyData != Keys.Escape)
             return base.ProcessCmdKey(ref msg, keyData);
+        Keys arrow = keyData & Keys.KeyCode;
+        if (arrow is Keys.Left or Keys.Right or Keys.Up or Keys.Down
+            && _selection is { } locked && !_windowCandidate && _toolbar.ActiveTool is null
+            && (keyData & (Keys.Control | Keys.Alt)) == 0)
+        {
+            int step = (keyData & Keys.Shift) != 0 ? 10 : 1;
+            int dx = arrow == Keys.Left ? -step : arrow == Keys.Right ? step : 0;
+            int dy = arrow == Keys.Up ? -step : arrow == Keys.Down ? step : 0;
+            SetSelection(SelectionGeometry.ResizeBy(locked, SelectionHandle.Body, dx, dy,
+                SelectionGeometry.DefaultMinimumSelection, _virtualBounds));
+            return true;
+        }
         // 先给编辑器（本窗口）处理，避免误传给托盘
         switch (keyData)
         {
@@ -826,6 +899,9 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
     private void SelectFullVirtualDesktop()
     {
+        _windowCandidate = false;
+        _pendingWindowPick = false;
+        SetPhase(ShotPhase.Annotating);
         _selection = _virtualBounds;
         _drag = DragMode.None;
         _toolbar.Layout(_selection, _virtualBounds, _dpi);
@@ -917,6 +993,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
 
     private void UpdateCursorShape()
     {
+        if (_windowCandidate) { Cursor = Cursors.Cross; return; }
         if (_toolbar.IsVisible && _toolbar.ContainsPoint(ToLocalPoint(_cursorVirtual)))
         {
             Cursor = Cursors.Hand;
@@ -974,6 +1051,9 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
             // 尺寸 HUD 位于选区上方（或内部顶端）：多估一行字高 + 内边距
             int hudEstimate = (int)Math.Ceiling(_metrics.HudFontPx) + (_metrics.HudPaddingPx * 3);
             footprint = footprint.Union(localSelection.Inflate(hudEstimate));
+            if (_windowCandidate)
+                footprint = footprint.Union(new PhysRect(0, Math.Max(0, localSelection.Y - hudEstimate),
+                    _virtualBounds.Width, hudEstimate * 2));
         }
         else
         {
