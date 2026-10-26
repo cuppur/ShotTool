@@ -9,6 +9,7 @@ public sealed partial class SettingsForm
     private readonly Label _ocrHelp = new();
     private readonly Label _translationHelp = new();
     private readonly Label _modelStatus = new();
+    private readonly Label _startupStatus = new();
     private float _layoutScale = 1;
     private readonly uint? _layoutDpiOverride;
     internal bool DiagnosticMode { get; set; }
@@ -219,6 +220,7 @@ public sealed partial class SettingsForm
     {
         var grid = NewPage("常驻");
         AddCheck(grid, _startup, "登录 Windows 后自动启动");
+        AddHint(grid, string.Empty, 64, _startupStatus);
         AddCheck(grid, _trayNotify, "显示托盘通知");
         AddHint(grid, "关闭设置窗口后，程序继续在系统托盘中运行。右键托盘图标可截图或退出。", 60);
         AddSection(grid, "固定截图");

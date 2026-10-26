@@ -98,6 +98,15 @@ internal sealed class TrayApplication : ApplicationContext
     /// <summary>托盘就绪后调用：注册热键（失败只提示，不阻断启动）。</summary>
     public void Start()
     {
+        // Upgrade a user-enabled registration only on an ordinary launch. Never resurrect
+        // a task disabled in Windows, and never rewrite a Run entry during its logon launch.
+        if (!Environment.GetCommandLineArgs().Contains("--startup") && _ctx.Settings?.App.StartupWithWindows == true
+            && StartupRegistration.ReadStatus().Enabled == true)
+        {
+            try { StartupRegistration.Apply(true); }
+            catch (Exception ex) { _ctx.Log.Warn("更新自启程序失败：" + ex.Message); }
+        }
+        _ctx.Log.Info("登录自启状态：" + StartupRegistration.ReadStatus().Description);
         RegisterHotkey();
 
         if (_ctx.Capture is Capture.GdiCaptureSource gdi)

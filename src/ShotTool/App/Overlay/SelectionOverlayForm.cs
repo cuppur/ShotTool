@@ -455,6 +455,11 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         base.OnMouseMove(e);
         UpdateCursorPosition(e.Location);
 
+        if (_movingTextOriginal is not null)
+        {
+            UpdateTextMove();
+            return;
+        }
         if (_drawing)
         {
             UpdateAnnotation();
@@ -603,6 +608,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
             return;
         }
 
+        if (BeginTextMove()) return;
         if (BeginAnnotation()) return;
 
         // ② 8 个控制柄 / 选区本体
@@ -646,6 +652,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         }
 
         UpdateCursorPosition(e.Location);
+        if (_movingTextOriginal is not null) { EndTextMove(); UpdateCursorShape(); return; }
         if (_pendingWindowPick)
         {
             int threshold = Math.Max(4, (int)Math.Round(4 * _dpi / 96.0));
@@ -719,6 +726,13 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
+
+        if (e.Button == MouseButtons.Left && HitText() is { } text)
+        {
+            _movingTextOriginal = null; _movingTextPreview = null; Capture = false;
+            EditTextAnnotation(text, text.TopLeft, text.FontSizePhys, text.Style);
+            return;
+        }
 
         if (e.Button != MouseButtons.Left || _selection is null || _toolbar.ActiveTool is not null)
         {
@@ -816,6 +830,10 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
         // 结果面板中的 Ctrl+C/A、Tab 等交给文本框处理，不能触发截图复制/全屏框选。
         if (_editorHost?.CurrentPanel is { ContainsFocus: true } && keyData != Keys.Escape)
             return base.ProcessCmdKey(ref msg, keyData);
+        if (keyData == Keys.Delete && _selectedText is { } selected && _history.Items.Contains(selected))
+        {
+            _history.Remove(selected); _selectedText = null; return true;
+        }
         Keys arrow = keyData & Keys.KeyCode;
         if (arrow is Keys.Left or Keys.Right or Keys.Up or Keys.Down
             && _selection is { } locked && !_windowCandidate && _toolbar.ActiveTool is null
@@ -994,6 +1012,7 @@ internal sealed partial class SelectionOverlayForm : Form, IOverlayHost, IShotSe
     private void UpdateCursorShape()
     {
         if (_windowCandidate) { Cursor = Cursors.Cross; return; }
+        if (_movingTextOriginal is not null || HitText() is not null) { Cursor = Cursors.SizeAll; return; }
         if (_toolbar.IsVisible && _toolbar.ContainsPoint(ToLocalPoint(_cursorVirtual)))
         {
             Cursor = Cursors.Hand;

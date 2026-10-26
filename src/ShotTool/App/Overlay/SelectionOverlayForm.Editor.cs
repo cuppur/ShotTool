@@ -76,17 +76,7 @@ internal sealed partial class SelectionOverlayForm : IToolbarHostSurface
         if (kind == AnnotationKind.Text)
         {
             double size = EditorDefaults.TextSizeToPhys(_toolbar.State.TextSize, _metrics.DpiScale);
-            string? text;
-            _ownedDialog = true;
-            try
-            {
-                text = TextInputForm.Edit(this,
-                    new PhysRect(_cursorVirtual.X, _cursorVirtual.Y,
-                        Math.Min(sel.Right - _cursorVirtual.X, (int)(280 * _metrics.DpiScale)), (int)(size * 2)),
-                    size, style.Argb, null, _metrics.DpiScale);
-            }
-            finally { _ownedDialog = false; Activate(); }
-            if (!string.IsNullOrWhiteSpace(text)) AddAnnotation(new TextAnnotation(_annotationStart, text, size, style));
+            EditTextAnnotation(null, _annotationStart, size, style);
             return true;
         }
         if (kind == AnnotationKind.Number)
@@ -177,10 +167,16 @@ internal sealed partial class SelectionOverlayForm : IToolbarHostSurface
             using var raw = ShotTool.Capture.SelectionCropper.Crop(_frame, sel);
             if (raw is null) return;
             var items = _history.Snapshot();
+            if (_movingTextOriginal is not null && _movingTextPreview is not null)
+            {
+                int index = items.IndexOf(_movingTextOriginal);
+                if (index >= 0) items[index] = _movingTextPreview;
+            }
             if (_previewAnnotation is not null) items.Add(_previewAnnotation);
             _annotationComposite = AnnotationRasterizer.Compose(raw, items, RenderOptions.Create(_metrics.DpiScale));
         }
         graphics.DrawImageUnscaled(_annotationComposite, sel.X - _virtualBounds.X, sel.Y - _virtualBounds.Y);
+        PaintTextSelection(graphics, sel);
     }
 
     uint IToolbarHostSurface.Dpi => _dpi;

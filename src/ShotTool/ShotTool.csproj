@@ -47,8 +47,8 @@
     <ApplicationIcon>..\..\Assets\icons\ShotTool.ico</ApplicationIcon>
     <Description>独立截图工具：框选 / 标注 / 复制保存 / 全局热键 / 托盘常驻 / OCR</Description>
     <Company>wechat-shot-standalone</Company>
-    <Version>0.7.0</Version>
-    <FileVersion>0.7.0.0</FileVersion>
+    <Version>0.8.0</Version>
+    <FileVersion>0.8.0.0</FileVersion>
     <Copyright>本仓库自研代码。不复用、不携带、不分发任何腾讯二进制文件或资源。</Copyright>
     <NeutralLanguage>zh-Hans</NeutralLanguage>
 

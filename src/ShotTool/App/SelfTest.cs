@@ -51,8 +51,10 @@ internal static class SelfTest
         bool settingsUi = args.Contains("--selftest-settings");
         bool windows = args.Contains("--selftest-windows");
         bool icons = args.Contains("--export-icon");
+        bool textEditing = args.Contains("--selftest-text");
+        bool startup = args.Contains("--selftest-startup");
 
-        if (!capture && !overlay && !compose && !editor && !aiUi && !pin && !settingsUi && !windows && !icons)
+        if (!capture && !overlay && !compose && !editor && !aiUi && !pin && !settingsUi && !windows && !icons && !textEditing && !startup)
         {
             return null;
         }
@@ -66,6 +68,8 @@ internal static class SelfTest
         bool ok = true;
         try
         {
+            if (textEditing) ok &= TextEditingSelfTest.Run(log, outputDirectory);
+            if (startup) ok &= StartupSelfTest.Run(log, outputDirectory);
             if (icons) TrayIconFactory.Export(Path.Combine(outputDirectory, "ShotTool.ico"), Path.Combine(outputDirectory, "app-icon.png"));
             if (windows) ok &= WindowPickingSelfTest.Run(log, outputDirectory);
             if (settingsUi) ok &= SettingsSelfTest.Run(log, outputDirectory);

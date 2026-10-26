@@ -66,6 +66,17 @@ internal static class Program
         }
 
         // ---- 5) 自测分支（离屏，不需要托盘；必须在单实例之前）----
+        if (args.Contains("--repair-startup"))
+        {
+            try
+            {
+                Settings.StartupRegistration.Apply(true);
+                log.Info(Settings.StartupRegistration.ReadStatus().Description);
+                Console.WriteLine("STARTUP_REPAIR=PASS");
+                return 0;
+            }
+            catch (Exception ex) { log.Error("自启修复失败", ex); Console.WriteLine(ex.Message); return 1; }
+        }
         int? selfTestExitCode = SelfTest.TryRun(args, log);
         if (selfTestExitCode is not null)
         {
@@ -81,6 +92,11 @@ internal static class Program
 
         if (!guard.IsFirstInstance)
         {
+            if (args.Contains("--startup"))
+            {
+                log.Info("登录自启时已有实例在运行，静默退出，不触发截图。");
+                return 0;
+            }
             // ★ 绝不静默退出：用户最常见的操作是"任务管理器结束进程"，若残留实例仍持有
             //   互斥体，新进程会走到这里。什么都不提示 = 用户以为程序坏了（t11 实测到的坑）。
             guard.SignalFirstInstance();

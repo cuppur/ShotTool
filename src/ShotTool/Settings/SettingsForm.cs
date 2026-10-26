@@ -78,6 +78,7 @@ public sealed partial class SettingsForm : Form
 
         // 自启以注册表真实状态为准（用户可能在任务管理器里手动禁用过）。
         _startup.Checked = StartupRegistration.IsEnabled() ?? app.StartupWithWindows;
+        _startupStatus.Text = StartupRegistration.ReadStatus().Description;
         _trayNotify.Checked = app.ShowTrayNotifications;
 
         _ocrCombo.SelectedIndex = Clamp((int)_ai.OcrBackend, _ocrCombo.Items.Count);
@@ -147,7 +148,7 @@ public sealed partial class SettingsForm : Form
         {
             MessageBox.Show(
                 this,
-                $"设置已保存，但开机自启登记失败：{startupError}\r\n可以在任务管理器 →「启动」里手动启用。",
+                $"设置已保存，但开机自启登记失败：{startupError}\r\n请检查系统启动设置或任务计划程序中的 ShotTool 登录任务。",
                 "ShotTool",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);

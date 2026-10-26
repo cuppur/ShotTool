@@ -1,164 +1,136 @@
-// 文字标注输入窗：**独立 owned 小窗**（不进 Alt+Tab、不显示任务栏按钮），输入完由调用方 overlay.Refocus()。
-//
-// 与 architect 约定的偏差（需同步）：
-//   * 用 WS_EX_TOOLWINDOW（隐藏任务栏/Alt+Tab）—— 必须；
-//   * **不用** WS_EX_NOACTIVATE：该样式让窗口无法获得键盘焦点，TextBox 收不到按键，文字根本打不进去。
-//     文字输入窗必须可被激活；提交/取消后由宿主 SetForegroundWindow(overlay.Handle) 把焦点还回去。
-#nullable enable
-using System;
-using System.Drawing;
-using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using ShotTool.Core;
 using ShotTool.Editor.Algorithms;
 using ShotTool.Editor.Model;
 
-namespace ShotTool.Editor.Toolbar
+namespace ShotTool.Editor.Toolbar;
+
+/// <summary>Native IME-aware transparent rich edit over the frozen screenshot, no white plate.</summary>
+public sealed class TextInputForm : Form
 {
-    /// <summary>单行/多行文字输入窗（无边框、TopMost、物理像素定位）。</summary>
-    public sealed class TextInputForm : Form
+    private readonly TransparentEditor _editor;
+    private readonly Font _font;
+    private readonly Bitmap? _background;
+    private readonly Point _backgroundOffset;
+    private readonly Size _limit;
+    private readonly int _inset;
+    private bool _committed;
+    private bool _composing;
+    internal bool DiagnosticMode { get; set; }
+    protected override bool ShowWithoutActivation => DiagnosticMode;
+
+    internal TextInputForm(string initial, double fontSizePhys, Color color, PhysRect available,
+        double dpiScale, Bitmap? background, PhysPoint backgroundOrigin)
     {
-        private readonly TextBox _textBox;
-        private readonly Font _font;
-        private bool _committed;
-
-        private TextInputForm(string initial, double fontSizePhys, Color foreColor, PhysRect boundsPhys, double dpiScale)
+        _font = TextMeasurer.CreateFont(TextAnnotation.DefaultFontFamily, fontSizePhys);
+        _background = background; // borrowed for modal editor lifetime
+        _backgroundOffset = new Point(backgroundOrigin.X - available.X, backgroundOrigin.Y - available.Y);
+        _inset = Math.Max(1, (int)Math.Round(dpiScale));
+        _limit = new Size(Math.Max(16, available.Width), Math.Max(16, available.Height));
+        AutoScaleMode = AutoScaleMode.None;
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        TopMost = true;
+        BackColor = Color.FromArgb(35, 39, 47);
+        Location = new Point(available.X - _inset, available.Y - _inset);
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        _editor = new TransparentEditor(this)
         {
-            double scale = dpiScale > 0.05 ? dpiScale : 1.0;
-            _font = TextMeasurer.CreateFont(TextAnnotation.DefaultFontFamily, fontSizePhys);
+            Multiline = true, AcceptsTab = false, BorderStyle = BorderStyle.None,
+            ScrollBars = RichTextBoxScrollBars.None, WordWrap = false,
+            DetectUrls = false, ShortcutsEnabled = true, Font = _font,
+            ForeColor = color, BackColor = BackColor, Text = initial,
+            ImeMode = ImeMode.On, HideSelection = false,
+            Location = new Point(_inset, _inset)
+        };
+        _editor.KeyDown += OnEditorKeyDown;
+        _editor.TextChanged += (_, _) => ResizeEditor();
+        Controls.Add(_editor);
+        ResizeEditor();
+        Deactivate += (_, _) => { if (!DiagnosticMode) Commit(); };
+        Shown += (_, _) => { ResizeEditor(); if (!DiagnosticMode) { _editor.Focus(); _editor.SelectionStart = _editor.TextLength; } };
+    }
 
-            FormBorderStyle = FormBorderStyle.None;
-            ShowInTaskbar = false;
-            StartPosition = FormStartPosition.Manual;
-            AutoScaleMode = AutoScaleMode.None;
-            TopMost = true;
-            BackColor = Color.FromArgb(0xFA, 0xFA, 0xFA);
-            Padding = new Padding(0);
+    public string? Result { get; private set; }
+    public static string? Edit(IWin32Window? owner, PhysRect boundsPhys, double fontSizePhys,
+        uint argb, string? initial, double dpiScale, Bitmap? background = null, PhysPoint backgroundOrigin = default)
+    {
+        using var form = new TextInputForm(initial ?? string.Empty, fontSizePhys,
+            Color.FromArgb(unchecked((int)argb)), boundsPhys, dpiScale, background, backgroundOrigin);
+        if (owner is not null) form.ShowDialog(owner); else form.ShowDialog();
+        return form.Result;
+    }
 
-            int paddingPhys = (int)Math.Round(4.0 * scale);
-            int minWidth = (int)Math.Round(240.0 * scale);
-            int lineHeight = (int)Math.Ceiling(_font.GetHeight());
-            int width = Math.Max(minWidth, boundsPhys.Width + paddingPhys * 2);
-            int height = Math.Max(lineHeight + paddingPhys * 2, boundsPhys.Height + paddingPhys * 2);
-            Bounds = new Rectangle(boundsPhys.X, boundsPhys.Y, width, height);
-
-            _textBox = new TextBox
-            {
-                Multiline = true,
-                AcceptsReturn = true,
-                BorderStyle = BorderStyle.None,
-                ScrollBars = ScrollBars.None,
-                WordWrap = false,
-                BackColor = BackColor,
-                ForeColor = foreColor,
-                Font = _font,
-                Dock = DockStyle.Fill,
-                Text = initial ?? string.Empty,
-                Margin = new Padding(0),
-            };
-
-            _textBox.KeyDown += OnTextBoxKeyDown;
-            _textBox.LostFocus += OnTextBoxLostFocus;
-            Controls.Add(_textBox);
+    private void ResizeEditor()
+    {
+        var size = TextMeasurer.Measure(string.IsNullOrEmpty(_editor.Text) ? "输入文字" : _editor.Text + " ",
+            _font.Size, _font.FontFamily.Name);
+        int width = Math.Min(_limit.Width, Math.Max((int)(120 * _font.Size / 18), (int)size.Width + 12));
+        int height = Math.Min(_limit.Height, Math.Max((int)Math.Ceiling(_font.GetHeight()) + 6, (int)size.Height + 8));
+        if (_editor.IsHandleCreated)
+        {
+            int span = _editor.GetPositionFromCharIndex(_editor.TextLength).Y - _editor.GetPositionFromCharIndex(0).Y;
+            height = Math.Min(_limit.Height, Math.Max(height, span + (int)Math.Ceiling(_font.GetHeight()) + 14));
         }
+        ClientSize = new Size(width + _inset * 2, height + _inset * 2);
+        _editor.Size = new Size(width, height);
+        Invalidate(true);
+    }
+    protected override void OnPaintBackground(PaintEventArgs e) => PaintBackdrop(e.Graphics, Point.Empty);
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using var border = new Pen(Color.FromArgb(0, 195, 117), _inset);
+        e.Graphics.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+    }
+    private void PaintBackdrop(Graphics graphics, Point childOffset)
+    {
+        graphics.Clear(BackColor);
+        if (_background is not null)
+            graphics.DrawImageUnscaled(_background, _backgroundOffset.X + _inset - childOffset.X,
+                _backgroundOffset.Y + _inset - childOffset.Y);
+    }
+    private void OnEditorKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_composing || e.KeyCode is Keys.ProcessKey or Keys.Packet) return;
+        if (e.KeyCode == Keys.Enter && !e.Shift)
+        { e.SuppressKeyPress = true; Commit(); }
+        else if (e.KeyCode == Keys.Escape)
+        { e.SuppressKeyPress = true; _committed = true; Result = null; DialogResult = DialogResult.Cancel; Close(); }
+    }
+    private void Commit()
+    {
+        if (_committed) return;
+        _committed = true;
+        Result = _editor.Text.Replace("\r\n", "\n");
+        DialogResult = DialogResult.OK; Close();
+    }
+    protected override void Dispose(bool disposing)
+    { base.Dispose(disposing); if (disposing) _font.Dispose(); }
 
-        /// <summary>提交后的文本；取消时为 null。空文本按取消处理。</summary>
-        public string? Result { get; private set; }
-
-        /// <summary>
-        /// 在指定物理像素位置弹出输入窗并阻塞直到提交/取消。
-        /// owner 传 overlay 窗口（保证归属关系与 Z 序）；返回 null 表示用户取消或未输入。
-        /// </summary>
-        public static string? Edit(
-            IWin32Window? owner,
-            PhysRect boundsPhys,
-            double fontSizePhys,
-            uint argb,
-            string? initial,
-            double dpiScale)
+    private sealed class TransparentEditor : RichTextBox
+    {
+        private readonly TextInputForm _host;
+        internal TransparentEditor(TextInputForm host) => _host = host;
+        protected override CreateParams CreateParams
+        { get { var p = base.CreateParams; p.ExStyle |= 0x20; return p; } }
+        protected override void WndProc(ref Message m)
         {
-            Color color = Color.FromArgb(unchecked((int)argb));
-            using (TextInputForm form = new TextInputForm(initial ?? string.Empty, fontSizePhys, color, boundsPhys, dpiScale))
+            if (m.Msg == 0x10D) _host._composing = true; // WM_IME_STARTCOMPOSITION
+            if (m.Msg == 0x10E) _host._composing = false;
+            if (m.Msg == 0x14 && m.WParam != IntPtr.Zero)
             {
-                if (owner != null)
-                {
-                    form.ShowDialog(owner);
-                }
-                else
-                {
-                    form.ShowDialog();
-                }
-
-                return string.IsNullOrEmpty(form.Result) ? null : form.Result;
+                using var graphics = Graphics.FromHdc(m.WParam);
+                _host.PaintBackdrop(graphics, Location);
+                m.Result = new IntPtr(1); return;
             }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-            if (disposing)
-            {
-                _font.Dispose();
-            }
-        }
-
-        private void OnTextBoxKeyDown(object? sender, KeyEventArgs e)
-        {
-            if (e.KeyCode == Keys.Enter && !e.Shift)
-            {
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-                Commit();
-            }
-            else if (e.KeyCode == Keys.Escape)
-            {
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-                Cancel();
-            }
-        }
-
-        private void OnTextBoxLostFocus(object? sender, EventArgs e)
-        {
-            // 失焦：有内容视为提交，无内容视为取消（避免留下空标注）
-            if (_committed)
-            {
-                return;
-            }
-
-            if (string.IsNullOrEmpty(_textBox.Text))
-            {
-                Cancel();
-            }
-            else
-            {
-                Commit();
-            }
-        }
-
-        private void Commit()
-        {
-            if (_committed)
-            {
-                return;
-            }
-
-            _committed = true;
-            Result = _textBox.Text;
-            DialogResult = DialogResult.OK;
-            Close();
-        }
-
-        private void Cancel()
-        {
-            if (_committed)
-            {
-                return;
-            }
-
-            _committed = true;
-            Result = null;
-            DialogResult = DialogResult.Cancel;
-            Close();
+            base.WndProc(ref m);
         }
     }
+
+    internal void SetDiagnosticText(string text) => _editor.Text = text;
+    internal bool DiagnosticTextFits => _editor.GetPositionFromCharIndex(_editor.TextLength).Y
+        - _editor.GetPositionFromCharIndex(0).Y + _font.GetHeight() + 4 <= _editor.Height;
+    internal void CommitForDiagnostics() => Commit();
 }

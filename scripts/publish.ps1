@@ -43,7 +43,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '0.7.0',
+    [string]$Version = '0.8.0',
 
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
@@ -241,6 +241,8 @@ ShotTool v$Version — 独立 Windows 截图工具
 Enter / Ctrl+C 复制，Ctrl+S 保存，Esc / 右键取消。
 框选后点图钉或按 F3 固定截图。贴图可拖动、滚轮缩放，双击恢复大小，Esc 关闭。
 Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+1..6 切工具，Tab 切换颜色与线宽/字号。
+文字直接透出截图背景；Enter 确认，Shift+Enter 换行，Esc 取消本次输入。添加后拖动文字可移动，双击可修改，Delete 删除选中文字。
+登录自启会在 %LOCALAPPDATA%\ShotTool\App\ 下保留独立程序副本，优先登记当前用户的登录任务（不需要管理员权限）。关闭时删除任务与旧启动项。
 再次点击已选工具可退出绘图并移动选区；拖八个控制点调整大小。
 工具条「提取文字」使用本地 OCR。$translationInfo
 
